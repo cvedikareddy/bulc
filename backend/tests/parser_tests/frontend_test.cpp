@@ -5,8 +5,12 @@
 #include <sstream>
 
 #include "../../compiler/parser/parser.h"
-
+#include "../../compiler/semantic/semantic_checker.h"   // adjust the path to your include setup
+#include "../../compiler/ir/ir.h"
+#include "../../compiler/optimizer/optimizer.h"
+#include "../../compiler/network/rete_compiler.h"
 using namespace bulc;
+
 
 static int failures = 0;
 #define CHECK(cond)                                                        \
@@ -69,13 +73,62 @@ static void testExampleFile(const std::string& path) {
     for (auto& r : p.rules)
         std::cout << "  " << r.name << " (prio " << r.priority << "): "
                   << r.condition->toString() << "\n";
-}
 
+    // Semantic check
+    SemanticChecker checker;
+    auto diags = checker.check(p);
+    for (auto& d : diags) std::cout << "  " << SemanticChecker::format(d) << "\n";
+    CHECK(!SemanticChecker::hasErrors(diags));
+    std::cout << "  Semantic check: "
+              << (SemanticChecker::hasErrors(diags) ? "failed" : "passed") << "\n";
+}
+static void testPipeline() {
+    // Written so every optimization has something to do (assumes your parser
+    // accepts parentheses around an OR group).
+    Program p = Parser::parseSource(
+        "rule A priority 2 { when (country == \"KP\" OR country == \"IR\") AND amount > 100 "
+        "then block_transaction } "
+        "rule B priority 9 { when NOT (NOT (amount > 100)) AND amount > 100 "
+        "then flag_for_review }");
+
+    SemanticChecker sc;
+    CHECK(!SemanticChecker::hasErrors(sc.check(p)));
+
+    IRGenerator gen;
+    IRProgram ir = gen.generate(p);
+    std::cout << "  IR before:\n" << ir.toString();
+
+    Optimizer opt;
+    OptStats st = opt.run(ir);
+    std::cout << "  IR after:\n" << ir.toString();
+    std::cout << "  nodes " << st.nodesBefore << " -> " << st.nodesAfter << "\n";
+    CHECK(st.doubleNotsRemoved == 1);
+    CHECK(st.duplicatesRemoved == 1);
+    CHECK(st.orsMerged == 1);
+
+    ReteCompiler rc;
+    Network net = rc.compile(ir);
+    std::cout << net.describe();
+    CHECK(net.alphas.size() == 2);   // `amount > 100` is shared by A and B
+
+    Fact f1;
+    f1["amount"] = 500.0;
+    f1["country"] = std::string("IR");
+    auto fired = net.evaluate(f1);
+    CHECK(fired.size() == 2);
+    CHECK(fired[0]->ruleName == "B");   // priority 9 first
+
+    Fact f2;
+    f2["amount"] = 50.0;
+    f2["country"] = std::string("IR");
+    CHECK(net.evaluate(f2).empty());
+}
 int main(int argc, char** argv) {
     testLexer();
     testParserPrecedence();
     testPaperExample();
     testErrors();
+    testPipeline();
     testExampleFile(argc > 1 ? argv[1] : "../examples/fraud_rules.rule");
     std::cout << (failures ? "FAILED\n" : "All front-end tests passed\n");
     return failures ? 1 : 0;
