@@ -1,0 +1,17 @@
+# Example fraud-detection rules for the BULC rule language.
+# Keywords (rule, priority, when, then, within, AND, OR, NOT, IN) are case-insensitive.
+
+rule HighValueRisky priority 10 {
+    when amount > 10000 AND risk_score > 80
+    then block_transaction
+}
+
+rule SuspiciousCountry priority 5 {
+    when country IN ["KP", "IR", "SY"] AND amount >= 500
+    then flag_for_review, notify("fraud-team")
+}
+
+rule RapidSmallTxns priority 3 within 60s {
+    when amount < 50 AND NOT (is_trusted_device == true)
+    then raise_alert("velocity")
+}
