@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+cmake-build-*/
+*.exe
+*.o
+*.a
+.DS_Store
+.vscode/

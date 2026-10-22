@@ -1,0 +1,16 @@
+# Example insurance-claim rules for the BULC rule language.
+
+rule LargeClaim priority 10 {
+    when claim_amount > 50000 AND policy_age_days < 90
+    then flag_for_review, notify("claims-team")
+}
+
+rule HighRiskRegion priority 6 {
+    when region IN ["FL", "LA", "TX"] AND claim_amount >= 10000
+    then flag_for_review
+}
+
+rule RepeatClaimant priority 4 within 30m {
+    when prior_claims > 3 AND NOT (is_verified == true)
+    then raise_alert("repeat-claimant")
+}

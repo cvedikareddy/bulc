@@ -1,0 +1,16 @@
+# Example firewall rules for the BULC rule language.
+
+rule BlockBadPorts priority 10 {
+    when dst_port IN [23, 445, 3389] AND is_internal == false
+    then block_transaction, notify("netsec")
+}
+
+rule BlockKnownBadCountry priority 8 {
+    when src_country IN ["KP", "IR"]
+    then block_transaction
+}
+
+rule PortScan priority 5 within 10s {
+    when packets_per_sec > 1000 AND NOT (is_whitelisted == true)
+    then raise_alert("port-scan")
+}
